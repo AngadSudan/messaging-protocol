@@ -12,12 +12,14 @@ QueueConfig load_config(void);
 
 QueueConfig initialize_config(int argc, char *argv[])
 {
-    int use_default = strcmp(argv[argc - 1], "-y");
+    int use_default = (argc > 1 && strcmp(argv[argc - 1], "-y") == 0);
     QueueConfig config = {0};
 
-    if (use_default == 0)
+    if (use_default)
     {
         config = config_default();
+        put_config(&config);
+        return config;
     }
 
     config = custom_config();
@@ -87,8 +89,8 @@ QueueConfig load_config(void)
 
     QueueConfig config = {0};
 
-    char line[128];
-    int i = 0;
+    char line[128] = {0};
+    size_t i = 0;
     char ch;
 
     while (read(fd, &ch, 1) == 1)
@@ -116,7 +118,7 @@ QueueConfig load_config(void)
         }
         else
         {
-            if (i < sizeof(line) - 1)
+            if (i < sizeof(line) - 1U)
                 line[i++] = ch;
         }
     }
