@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 void consumer_consumer_operation(int argc, char *argv[])
 {
@@ -16,11 +17,23 @@ void consumer_consumer_operation(int argc, char *argv[])
 
     if (strcmp(operation, "register") == 0)
     {
-        start_queue();
+        int fd = connect_queue();
+        if (fd < 0)
+            exit(EXIT_FAILURE);
+
+        char message[4096];
+        ssize_t received;
+        while ((received = read(fd, message, sizeof(message) - 1)) > 0)
+        {
+            message[received] = '\0';
+            fputs(message, stdout);
+            fflush(stdout);
+        }
+        close(fd);
     }
     else if (strcmp(operation, "unregister") == 0)
     {
-        kill_queue();
+        return;
     }
     else
     {

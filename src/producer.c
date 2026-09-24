@@ -16,11 +16,18 @@ void consumer_producer_operation(int argc, char *argv[])
 
     if (strcmp(operation, "register") == 0)
     {
-        start_queue();
+        if (argc < 4)
+        {
+            fprintf(stderr, "Usage: %s producer register <message>\n", argv[0]);
+            exit(EXIT_FAILURE);
+        }
+
+        if (publish_message(argv[3]) < 0)
+            exit(EXIT_FAILURE);
     }
     else if (strcmp(operation, "unregister") == 0)
     {
-        kill_queue();
+        return;
     }
     else
     {
