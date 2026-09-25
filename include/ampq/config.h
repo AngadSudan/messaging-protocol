@@ -7,6 +7,8 @@ typedef struct
     int max_producers;
     int max_consumers;
     int message_retention;
+    char log_file[256];
+    int logging_interval;
 } QueueConfig;
 
 QueueConfig initialize_config(int argc, char *argv[]);

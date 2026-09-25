@@ -33,8 +33,10 @@ QueueConfig config_default(void)
         .port = 9294,
         .max_consumers = 100,
         .max_producers = 100,
-        .message_retention = 1};
+        .message_retention = 1,
+        .logging_interval = 100};
 
+    strcpy(config.log_file, "./queue.log");
     return config;
 }
 
@@ -44,6 +46,8 @@ QueueConfig custom_config(void)
     int max_consumers;
     int max_producers;
     int message_retention;
+    int logging_interval;
+    char log_file[256];
 
     char input[32];
 
@@ -79,12 +83,32 @@ QueueConfig custom_config(void)
     else
         message_retention = atoi(input);
 
+    printf("Logging interval in ms (default - 100): ");
+    fgets(input, sizeof(input), stdin);
+
+    if (input[0] == '\n')
+        logging_interval = 100;
+    else
+        logging_interval = atoi(input);
+
+    printf("Log file path (default - ./queue.log): ");
+    fgets(input, sizeof(input), stdin);
+
+    if (input[0] == '\n')
+        strcpy(log_file, "./queue.log");
+    else {
+        input[strcspn(input, "\n")] = '\0';
+        strcpy(log_file, input);
+    }
+
     QueueConfig config = {
         .port = port,
         .max_consumers = max_consumers,
         .message_retention = message_retention,
-        .max_producers = max_producers};
+        .max_producers = max_producers,
+        .logging_interval = logging_interval};
 
+    strcpy(config.log_file, log_file);
     return config;
 }
 
@@ -126,6 +150,12 @@ QueueConfig load_config(void)
 
                 else if (strcmp(key, "message_retention") == 0)
                     config.message_retention = atoi(value);
+
+                else if (strcmp(key, "logging_interval") == 0)
+                    config.logging_interval = atoi(value);
+
+                else if (strcmp(key, "log_file") == 0)
+                    strncpy(config.log_file, value, sizeof(config.log_file) - 1);
             }
 
             i = 0;
@@ -151,7 +181,7 @@ void put_config(QueueConfig *config)
         exit(-1);
     }
 
-    char buffer[128];
+    char buffer[512];
 
     int len = sprintf(buffer, "port=%d\n", config->port);
     write(fd, buffer, len);
@@ -163,6 +193,12 @@ void put_config(QueueConfig *config)
     write(fd, buffer, len);
 
     len = sprintf(buffer, "message_retention=%d\n", config->message_retention);
+    write(fd, buffer, len);
+
+    len = sprintf(buffer, "logging_interval=%d\n", config->logging_interval);
+    write(fd, buffer, len);
+
+    len = sprintf(buffer, "log_file=%s\n", config->log_file);
     write(fd, buffer, len);
 
     close(fd);

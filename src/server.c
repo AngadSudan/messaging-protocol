@@ -1,6 +1,8 @@
 #include "ampq/server.h"
 #include "ampq/config.h"
 #include "ampq/wal.h"
+#include "ampq/display.h"
+#include "ampq/logger.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,9 +21,15 @@ typedef struct
     int producer_count;
     int consumer_count;
     int consumers[100];
+    pthread_mutex_t consumer_lock;
 } Queue;
 
-static Queue q = {.fd = -1};
+static Queue q = {.fd = -1, .consumer_lock = PTHREAD_MUTEX_INITIALIZER};
+
+static void display_status(void)
+{
+    display_consumer_status(q.consumer_count, q.config.max_consumers);
+}
 
 static int write_all(int fd, const char *buffer, size_t length)
 {
@@ -86,32 +94,46 @@ static void *handle_client(void *argument)
 
     if (strcmp(buffer, "CONSUMER\n") == 0)
     {
+        pthread_mutex_lock(&q.consumer_lock);
         if (q.consumer_count >= q.config.max_consumers)
         {
+            pthread_mutex_unlock(&q.consumer_lock);
             close(client_fd);
             return NULL;
         }
 
         if (replay_wal(client_fd) < 0)
         {
+            pthread_mutex_unlock(&q.consumer_lock);
             close(client_fd);
             return NULL;
         }
 
         q.consumers[q.consumer_count++] = client_fd;
+        logger_log(LOG_EVENT, "CONSUMER", "Connected - Total: %d/%d",
+                   q.consumer_count, q.config.max_consumers);
+        display_connection_event("CONNECTED", q.consumer_count, q.config.max_consumers);
+        display_status();
+        pthread_mutex_unlock(&q.consumer_lock);
 
         while (recv(client_fd, buffer, sizeof(buffer), 0) > 0)
         {
         }
 
+        pthread_mutex_lock(&q.consumer_lock);
         for (int i = 0; i < q.consumer_count; i++)
         {
             if (q.consumers[i] == client_fd)
             {
                 q.consumers[i] = q.consumers[--q.consumer_count];
+                logger_log(LOG_EVENT, "CONSUMER", "Disconnected - Total: %d/%d",
+                           q.consumer_count, q.config.max_consumers);
+                display_connection_event("DISCONNECTED", q.consumer_count, q.config.max_consumers);
+                display_status();
                 break;
             }
         }
+        pthread_mutex_unlock(&q.consumer_lock);
         close(client_fd);
         return NULL;
     }
@@ -131,8 +153,13 @@ static void *handle_client(void *argument)
                 *newline = '\0';
                 if (*line != '\0' && append_wal(line) == 0)
                 {
-                    if (broadcast_message(line) > 0)
+                    logger_log(LOG_MESSAGE, "PUBLISHED", "%s", line);
+                    int delivered = broadcast_message(line);
+                    if (delivered > 0)
+                    {
                         remove_wal_message(line, q.config.message_retention);
+                        logger_log(LOG_MESSAGE, "DELIVERED", "to %d consumer(s)", delivered);
+                    }
                 }
                 line = newline + 1;
             }
@@ -190,6 +217,13 @@ int start_queue(void)
         return -1;
     }
 
+    display_server_header();
+    display_status();
+    printf("\n%s[*]%s Waiting for connections...\n\n", "\x1b[36m", "\x1b[0m");
+
+    logger_init(q.config.log_file, q.config.logging_interval);
+    logger_log(LOG_INFO, "SERVER", "Queue server started on port %d", q.config.port);
+
     while (1)
     {
         struct sockaddr_in client_address;
@@ -229,6 +263,8 @@ int start_queue(void)
 
 void kill_queue(void)
 {
+    logger_log(LOG_INFO, "SERVER", "Queue server shutting down");
+    logger_cleanup();
     if (q.fd >= 0)
         close(q.fd);
     q.fd = -1;
