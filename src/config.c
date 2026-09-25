@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include "ampq/config.h"
+#include "ampq/fileutil.h"
 
 #define QUEUE_PATH "./data/queue.conf"
 
@@ -129,6 +130,12 @@ QueueConfig load_config(void)
 {
     int fd;
 
+    if (ensure_file_exists(QUEUE_PATH) < 0)
+    {
+        printf("Error creating config file\n");
+        exit(-1);
+    }
+
     if ((fd = open(QUEUE_PATH, O_RDONLY)) < 0)
     {
         printf("Error reading config file\n");
@@ -190,6 +197,12 @@ QueueConfig load_config(void)
 void put_config(QueueConfig *config)
 {
     int fd;
+
+    if (ensure_parent_directory_exists(QUEUE_PATH) < 0)
+    {
+        printf("Error creating config directory\n");
+        exit(-1);
+    }
 
     if ((fd = open(QUEUE_PATH, O_WRONLY | O_CREAT | O_TRUNC, 0644)) < 0)
     {

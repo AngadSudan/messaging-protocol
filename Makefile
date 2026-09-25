@@ -12,7 +12,8 @@ SRC = src/main.c \
       src/server.c \
       src/message.c \
       src/display.c \
-      src/logger.c
+      src/logger.c \
+      src/fileutil.c
 
 $(TARGET): $(SRC)
 	mkdir -p build

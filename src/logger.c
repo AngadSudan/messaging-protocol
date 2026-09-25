@@ -1,4 +1,5 @@
 #include "ampq/logger.h"
+#include "ampq/fileutil.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -55,6 +56,12 @@ void logger_init(const char *log_file, int logging_interval_ms)
 {
     if (logger.log_file != NULL)
         return;
+
+    if (ensure_file_exists(log_file) < 0)
+    {
+        perror("Failed to create log file");
+        return;
+    }
 
     logger.log_file = malloc(strlen(log_file) + 1);
     strcpy(logger.log_file, log_file);
