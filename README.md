@@ -106,6 +106,7 @@ Stored in `data/queue.conf` as key-value pairs:
 | `port`          | 9294    | TCP port the queue server listens on      |
 | `max_producers` | 100     | Maximum simultaneous producer connections |
 | `max_consumers` | 100     | Maximum simultaneous consumer connections |
+| `message_retention` | 1   | How many consumers must receive message before WAL deletion |
 
 Configure interactively or accept defaults:
 
@@ -145,6 +146,7 @@ src/
 ├── queue.c       Client-side connection helpers (connect, publish)
 ├── server.c      Queue server — socket setup, accept loop, client threads
 ├── wal.c         Write-ahead log — append, replay, remove
+├── message.c     Message struct with timestamp and retention tracking
 ├── consumer.c    Consumer CLI handler
 └── producer.c    Producer CLI handler
 
@@ -152,6 +154,7 @@ include/ampq/
 ├── config.h      QueueConfig struct and function declarations
 ├── queue.h       Client-side API (connect_queue, publish_message)
 ├── server.h      Server API (start_queue, kill_queue)
+├── message.h     Message struct and timestamp/retention functions
 ├── consumer.h    Consumer handler declaration
 ├── producer.h    Producer handler declaration
 └── wal.h         WAL API (append_wal, replay_wal, remove_wal_message)
@@ -159,7 +162,7 @@ include/ampq/
 data/
 └── queue.conf    Runtime configuration
 
-WAL.log           Write-ahead log (created at runtime)
+WAL.log           Write-ahead log (created at runtime, format: timestamp|content|retention)
 ```
 
 #### Key Design Decisions
@@ -176,6 +179,14 @@ WAL.log           Write-ahead log (created at runtime)
 - **WAL before broadcast.** Messages hit disk before the server attempts
   delivery. This is the same ordering guarantee used by PostgreSQL and Kafka.
   The tradeoff is write latency (fsync is slow), but durability comes first.
+
+- **Message timestamps and retention tracking.** Each message is stored with:
+  - **Timestamp** (ISO 8601 UTC format): When the message was created
+  - **Retention count** (integer): How many consumers have received it
+  - **Content** (plain text): The actual message
+  - Format in WAL: `timestamp|content|retention_count`
+  - This enables structured query and replay of messages by time, and supports
+    at-least-N-delivery guarantees (messages kept until N consumers receive them)
 
 - **Atomic WAL removal via rename.** `remove_wal_message` writes a filtered
   copy to `WAL.log.tmp`, then atomically renames it over `WAL.log`. This

@@ -1,4 +1,5 @@
 #include "ampq/wal.h"
+#include "ampq/message.h"
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
@@ -31,14 +32,19 @@ static int send_message(int client_fd, const char *message)
     return write_all(client_fd, buffer, (size_t)length);
 }
 
-int append_wal(const char *message)
+int append_wal(const char *message_content)
 {
+    Message msg = message_create(message_content);
+    const char *serialized = message_serialize(&msg);
+    if (serialized == NULL)
+        return -1;
+
     int fd = open(WAL_PATH, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0)
         return -1;
 
-    size_t length = strlen(message);
-    int result = write_all(fd, message, length) == 0 &&
+    size_t length = strlen(serialized);
+    int result = write_all(fd, serialized, length) == 0 &&
                          write_all(fd, "\n", 1) == 0
                      ? 0
                      : -1;
@@ -53,7 +59,7 @@ int replay_wal(int client_fd)
     if (input_fd < 0)
         return errno == ENOENT ? 0 : -1;
 
-    char line[MESSAGE_SIZE];
+    char line[MESSAGE_SIZE + 32];
     size_t line_length = 0;
     char character;
     ssize_t bytes_read;
@@ -70,10 +76,14 @@ int replay_wal(int client_fd)
         if (character == '\n')
         {
             line[line_length] = '\0';
-            if (line_length > 0 && send_message(client_fd, line) < 0)
+            if (line_length > 0)
             {
-                result = -1;
-                break;
+                Message msg = message_deserialize(line);
+                if (send_message(client_fd, msg.content) < 0)
+                {
+                    result = -1;
+                    break;
+                }
             }
             line_length = 0;
         }
@@ -98,7 +108,7 @@ int replay_wal(int client_fd)
     return 0;
 }
 
-int remove_wal_message(const char *message)
+int increment_wal_message_retention(const char *message_content, int max_retention)
 {
     int input_fd = open(WAL_PATH, O_RDONLY);
     if (input_fd < 0)
@@ -113,9 +123,9 @@ int remove_wal_message(const char *message)
         return -1;
     }
 
-    char line[MESSAGE_SIZE];
+    char line[MESSAGE_SIZE + 32];
     size_t line_length = 0;
-    int removed = 0;
+    int found = 0;
     char buffer[512];
     ssize_t bytes_read;
     int result = 0;
@@ -135,11 +145,22 @@ int remove_wal_message(const char *message)
                 continue;
 
             line[line_length - 1] = '\0';
-            if (!removed && strcmp(line, message) == 0)
-                removed = 1;
-            else if (write_all(output_fd, line, line_length - 1) < 0 ||
-                     write_all(output_fd, "\n", 1) < 0)
-                result = -1;
+            Message msg = message_deserialize(line);
+
+            if (!found && strcmp(msg.content, message_content) == 0)
+            {
+                found = 1;
+                message_increment_retention(&msg);
+            }
+
+            if (!message_should_delete(&msg, max_retention))
+            {
+                const char *serialized = message_serialize(&msg);
+                if (serialized == NULL || write_all(output_fd, serialized, strlen(serialized)) < 0 ||
+                    write_all(output_fd, "\n", 1) < 0)
+                    result = -1;
+            }
+
             line_length = 0;
 
             if (result < 0)
@@ -158,5 +179,10 @@ int remove_wal_message(const char *message)
         unlink(temporary_path);
         return -1;
     }
-    return removed ? 0 : -1;
+    return found ? 0 : -1;
+}
+
+int remove_wal_message(const char *message_content, int max_retention)
+{
+    return increment_wal_message_retention(message_content, max_retention);
 }

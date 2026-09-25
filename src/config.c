@@ -32,7 +32,8 @@ QueueConfig config_default(void)
     QueueConfig config = {
         .port = 9294,
         .max_consumers = 100,
-        .max_producers = 100};
+        .max_producers = 100,
+        .message_retention = 1};
 
     return config;
 }
@@ -42,6 +43,7 @@ QueueConfig custom_config(void)
     int port;
     int max_consumers;
     int max_producers;
+    int message_retention;
 
     char input[32];
 
@@ -69,9 +71,18 @@ QueueConfig custom_config(void)
     else
         max_consumers = atoi(input);
 
+    printf("Max Message retention (default - 1): ");
+    fgets(input, sizeof(input), stdin);
+
+    if (input[0] == '\n')
+        message_retention = 1;
+    else
+        message_retention = atoi(input);
+
     QueueConfig config = {
         .port = port,
         .max_consumers = max_consumers,
+        .message_retention = message_retention,
         .max_producers = max_producers};
 
     return config;
@@ -112,6 +123,9 @@ QueueConfig load_config(void)
 
                 else if (strcmp(key, "max_consumers") == 0)
                     config.max_consumers = atoi(value);
+
+                else if (strcmp(key, "message_retention") == 0)
+                    config.message_retention = atoi(value);
             }
 
             i = 0;
@@ -146,6 +160,9 @@ void put_config(QueueConfig *config)
     write(fd, buffer, len);
 
     len = sprintf(buffer, "max_consumers=%d\n", config->max_consumers);
+    write(fd, buffer, len);
+
+    len = sprintf(buffer, "message_retention=%d\n", config->message_retention);
     write(fd, buffer, len);
 
     close(fd);

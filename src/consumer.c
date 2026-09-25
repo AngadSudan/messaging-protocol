@@ -31,13 +31,9 @@ void consumer_consumer_operation(int argc, char *argv[])
         }
         close(fd);
     }
-    else if (strcmp(operation, "unregister") == 0)
-    {
-        return;
-    }
     else
     {
-        printf("Operations allowed are - register|unregister\n");
+        printf("Operations allowed are - register\n");
         exit(-1);
     }
 }

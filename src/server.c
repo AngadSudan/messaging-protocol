@@ -132,7 +132,7 @@ static void *handle_client(void *argument)
                 if (*line != '\0' && append_wal(line) == 0)
                 {
                     if (broadcast_message(line) > 0)
-                        remove_wal_message(line);
+                        remove_wal_message(line, q.config.message_retention);
                 }
                 line = newline + 1;
             }

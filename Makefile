@@ -9,7 +9,8 @@ SRC = src/main.c \
       src/producer.c \
       src/queue.c \
       src/wal.c \
-      src/server.c
+      src/server.c \
+      src/message.c
 
 $(TARGET): $(SRC)
 	mkdir -p build

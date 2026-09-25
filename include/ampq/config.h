@@ -6,6 +6,7 @@ typedef struct
     int port;
     int max_producers;
     int max_consumers;
+    int message_retention;
 } QueueConfig;
 
 QueueConfig initialize_config(int argc, char *argv[]);

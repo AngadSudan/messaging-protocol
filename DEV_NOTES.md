@@ -15,6 +15,7 @@ queue.c         Client-side socket helpers + queue CLI dispatch
 server.c        Queue server — accepts connections, routes messages
 wal.c           Write-ahead log for message durability
 config.c        Configuration loading/saving (file-backed key=value)
+message.c       Message struct and retention tracking
 ```
 
 The binary acts as both **client** and **server**. Running `./protocol queue start`
@@ -279,6 +280,115 @@ Flags used when writing the config file:
 - **`O_TRUNC`** — If the file already exists, truncate it to zero length. This
   effectively replaces the old config with the new one. Combined with `O_CREAT`,
   this means "create or overwrite."
+
+---
+
+## Message Retention (message.c, wal.c)
+
+### The Message Struct
+
+```c
+typedef struct
+{
+    char content[4096];
+    int retention_count;
+} Message;
+```
+
+Each message tracks:
+- **`content`** — The actual message text (max 4096 bytes)
+- **`retention_count`** — How many consumers have successfully received it
+
+### Message Lifecycle with Retention
+
+```
+Producer sends message
+        │
+        ▼
+   append_wal()           ── message stored as "content|0"
+        │
+        ▼
+ broadcast_message()      ── send to all consumers
+        │
+        ├─► Consumer 1 ✓ (receives)
+        │
+        ├─► Consumer 2 ✓ (receives)
+        │
+        ▼
+remove_wal_message()      ── increment to "content|2"
+        │
+        ▼
+message_should_delete()   ── check if retention >= max_retention
+        │
+        └─► If yes, delete from WAL
+        └─► If no, keep for next consumer batch
+```
+
+### Message Serialization
+
+Messages in `WAL.log` are stored with retention metadata using a pipe delimiter:
+
+```
+hello world|0
+foo bar|1
+test message|2
+```
+
+Format: `message_content|retention_count`
+
+- **Deserialization** (`message_deserialize`) — splits on the last `|` to separate
+  content from count. If no `|` exists (backward compatibility), sets count to 0.
+- **Serialization** (`message_serialize`) — formats as `content|count` before
+  writing to disk.
+
+### Configuration: `message_retention`
+
+Added to `queue.conf`:
+
+```
+port=9294
+max_producers=100
+max_consumers=100
+message_retention=1
+```
+
+- **Default:** `1` — message deleted after reaching 1 consumer (fire-and-forget)
+- **Value:** `2` or higher — message kept in WAL until that many consumers receive it
+
+This enables **at-least-N-delivery guarantees**: a message won't be discarded from
+the queue until at least N distinct consumers have processed it. Useful for
+broadcast scenarios where you want to ensure redundancy or multiple systems
+receive important events.
+
+### How Retention Works
+
+When a producer publishes `"hello"`:
+
+1. `append_wal("hello")` → writes `"hello|0"` to `WAL.log`
+2. `broadcast_message("hello")` → sends to all connected consumers
+3. After each successful send, `remove_wal_message("hello", max_retention)` is called
+4. This function:
+   - Reads `WAL.log` line by line
+   - Finds the first line matching `"hello"`
+   - Increments its retention count: `"hello|0"` → `"hello|1"`
+   - Checks `message_should_delete()`: if retention >= max_retention, skips writing to temp file (effectively deletes it)
+   - Otherwise, writes the updated line to temp file
+   - Atomically renames temp over original (atomic WAL update)
+
+### Example: max_retention = 2
+
+```
+Scenario: 3 consumers, message_retention=2
+
+Initial state:  WAL.log: "hello|0"
+
+Consumer 1 receives hello:  WAL.log: "hello|1"   (keep, 1 < 2)
+
+Consumer 2 receives hello:  WAL.log: (deleted)   (delete, 1 >= 2 after increment)
+
+Consumer 3 arrives later:   replay_wal() sends buffered messages
+                            but "hello" is gone (already delivered to 2 consumers)
+```
 
 ---
 

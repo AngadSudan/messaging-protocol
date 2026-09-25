@@ -25,13 +25,9 @@ void consumer_producer_operation(int argc, char *argv[])
         if (publish_message(argv[3]) < 0)
             exit(EXIT_FAILURE);
     }
-    else if (strcmp(operation, "unregister") == 0)
-    {
-        return;
-    }
     else
     {
-        printf("Operations allowed are - register|unregister\n");
+        printf("Operations allowed are - register\n");
         exit(-1);
     }
 }
