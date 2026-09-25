@@ -7,7 +7,9 @@ SRC = src/main.c \
       src/consumer.c \
       src/config.c \
       src/producer.c \
-      src/queue.c
+      src/queue.c \
+      src/wal.c \
+      src/server.c
 
 $(TARGET): $(SRC)
 	mkdir -p build
