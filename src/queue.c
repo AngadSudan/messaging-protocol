@@ -7,10 +7,11 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netdb.h>
+#include <arpa/inet.h>
 
-static int connect_to_queue(const char *role)
+static int connect_to_queue(const char *role, const char *server_addr, int port)
 {
-    QueueConfig config = load_config();
     int fd = socket(AF_INET, SOCK_STREAM, 0);
 
     if (fd < 0)
@@ -19,10 +20,19 @@ static int connect_to_queue(const char *role)
         return -1;
     }
 
+    struct hostent *host = gethostbyname(server_addr);
+    if (host == NULL)
+    {
+        perror("gethostbyname");
+        close(fd);
+        return -1;
+    }
+
     struct sockaddr_in address = {
         .sin_family = AF_INET,
-        .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
-        .sin_port = htons(config.port)};
+        .sin_port = htons(port)};
+
+    memcpy(&address.sin_addr, host->h_addr, host->h_length);
 
     if (connect(fd, (struct sockaddr *)&address, sizeof(address)) < 0)
     {
@@ -42,12 +52,14 @@ static int connect_to_queue(const char *role)
 
 int connect_queue(void)
 {
-    return connect_to_queue("CONSUMER");
+    QueueConfig config = load_config();
+    return connect_to_queue("CONSUMER", config.server_address, config.port);
 }
 
 int publish_message(const char *message)
 {
-    int fd = connect_to_queue("PRODUCER");
+    QueueConfig config = load_config();
+    int fd = connect_to_queue("PRODUCER", config.server_address, config.port);
     if (fd < 0)
         return -1;
 
@@ -85,3 +97,4 @@ void consumer_queue_operation(int argc, char *argv[])
         exit(-1);
     }
 }
+

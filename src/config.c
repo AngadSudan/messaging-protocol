@@ -37,6 +37,7 @@ QueueConfig config_default(void)
         .logging_interval = 100};
 
     strcpy(config.log_file, "./queue.log");
+    strcpy(config.server_address, "localhost");
     return config;
 }
 
@@ -48,8 +49,19 @@ QueueConfig custom_config(void)
     int message_retention;
     int logging_interval;
     char log_file[256];
+    char server_address[256];
 
-    char input[32];
+    char input[256];
+
+    printf("Server address (default - localhost): ");
+    fgets(input, sizeof(input), stdin);
+
+    if (input[0] == '\n')
+        strcpy(server_address, "localhost");
+    else {
+        input[strcspn(input, "\n")] = '\0';
+        strcpy(server_address, input);
+    }
 
     printf("Port number (default - 9294): ");
     fgets(input, sizeof(input), stdin);
@@ -109,6 +121,7 @@ QueueConfig custom_config(void)
         .logging_interval = logging_interval};
 
     strcpy(config.log_file, log_file);
+    strcpy(config.server_address, server_address);
     return config;
 }
 
@@ -156,6 +169,9 @@ QueueConfig load_config(void)
 
                 else if (strcmp(key, "log_file") == 0)
                     strncpy(config.log_file, value, sizeof(config.log_file) - 1);
+
+                else if (strcmp(key, "server_address") == 0)
+                    strncpy(config.server_address, value, sizeof(config.server_address) - 1);
             }
 
             i = 0;
@@ -183,7 +199,10 @@ void put_config(QueueConfig *config)
 
     char buffer[512];
 
-    int len = sprintf(buffer, "port=%d\n", config->port);
+    int len = sprintf(buffer, "server_address=%s\n", config->server_address);
+    write(fd, buffer, len);
+
+    len = sprintf(buffer, "port=%d\n", config->port);
     write(fd, buffer, len);
 
     len = sprintf(buffer, "max_producers=%d\n", config->max_producers);

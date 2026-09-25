@@ -9,6 +9,7 @@ typedef struct
     int message_retention;
     char log_file[256];
     int logging_interval;
+    char server_address[256];
 } QueueConfig;
 
 QueueConfig initialize_config(int argc, char *argv[]);
